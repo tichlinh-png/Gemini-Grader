@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, Award, Check, X, RefreshCw, Sparkles, Loader2, FileText, Trash2, Plus, AlertCircle, CheckCircle2, Clock, ChevronLeft } from 'lucide-react';
+import { Upload, Award, Check, X, RefreshCw, Sparkles, Loader2, FileText, Trash2, Plus, AlertCircle, CheckCircle2, Clock, ChevronLeft, Zap, Layers, Search } from 'lucide-react';
 import GraderResults from './components/GraderResults';
 import HistoryList from './components/HistoryList';
 import { gradeWriting } from './services/geminiService';
@@ -20,7 +20,6 @@ interface ImageFile {
 
 const STORAGE_KEY = 'gemini_grader_history_v1';
 
-// Inline Web Worker for pixel manipulation
 const workerCode = `
   self.onmessage = function(e) {
     const { imageData, id } = e.data;
@@ -41,6 +40,8 @@ const App: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [currentFileIdx, setCurrentFileIdx] = useState(0);
   const [totalFiles, setTotalFiles] = useState(0);
+  const [statusMsg, setStatusMsg] = useState("Đang chuẩn bị...");
+  const [currentProcessingThumb, setCurrentProcessingThumb] = useState<string | null>(null);
   
   const [result, setResult] = useState<GradingResult | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -50,7 +51,6 @@ const App: React.FC = () => {
   
   const workerRef = useRef<Worker | null>(null);
 
-  // Load history from localStorage
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
@@ -66,7 +66,6 @@ const App: React.FC = () => {
     return () => workerRef.current?.terminate();
   }, []);
 
-  // Sync history to localStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
   }, [history]);
@@ -78,9 +77,29 @@ const App: React.FC = () => {
     }
   }, [successMsg]);
 
+  useEffect(() => {
+    if (processingFiles) {
+      const statuses = [
+        "Đang tối ưu hóa điểm ảnh...",
+        "Đang nén dữ liệu qua Web Worker...",
+        "Tăng cường độ tương phản văn bản...",
+        "Đang xử lý định dạng HEIC...",
+        "Đang chuẩn bị dữ liệu cho AI..."
+      ];
+      const interval = setInterval(() => {
+        setStatusMsg(statuses[Math.floor(Math.random() * statuses.length)]);
+      }, 2000);
+      return () => clearInterval(interval);
+    }
+  }, [processingFiles]);
+
   const processImage = async (file: File): Promise<ImageFile> => {
     let blob: Blob = file;
     const isHEIC = file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
+
+    // Create a quick local URL for the thumbnail while processing
+    const quickThumb = URL.createObjectURL(file);
+    setCurrentProcessingThumb(quickThumb);
 
     if (isHEIC && window.heic2any) {
       try {
@@ -128,6 +147,7 @@ const App: React.FC = () => {
                 workerRef.current?.removeEventListener('message', onMessage);
                 ctx.putImageData(event.data.imageData, 0, 0);
                 const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                URL.revokeObjectURL(quickThumb); // Clean up
                 resolve({
                   id,
                   preview: dataUrl,
@@ -139,6 +159,7 @@ const App: React.FC = () => {
             workerRef.current.postMessage({ imageData, id }, [imageData.data.buffer]);
           } else {
             const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            URL.revokeObjectURL(quickThumb); // Clean up
             resolve({
               id: Math.random().toString(36).substr(2, 9),
               preview: dataUrl,
@@ -177,6 +198,7 @@ const App: React.FC = () => {
       } finally {
         setProcessingFiles(false);
         setProgress(0);
+        setCurrentProcessingThumb(null);
         if (e.target) e.target.value = '';
       }
     }
@@ -203,7 +225,6 @@ const App: React.FC = () => {
         setResult(res);
         setView('result');
         
-        // Save to history
         const newEntry: HistoryEntry = {
           id: Math.random().toString(36).substr(2, 9),
           timestamp: Date.now(),
@@ -300,8 +321,8 @@ const App: React.FC = () => {
           />
         ) : (
           <>
-            {view === 'main' && !loading && (
-              <div className="text-center mb-10 space-y-4">
+            {view === 'main' && !loading && !processingFiles && selectedImages.length === 0 && (
+              <div className="text-center mb-10 space-y-4 animate-in fade-in duration-700">
                 <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-indigo-50 text-indigo-700 rounded-full text-xs font-black uppercase tracking-widest animate-pulse">
                   <Sparkles size={14} />
                   AI Grader v3.6 • Smart Sync
@@ -346,9 +367,10 @@ const App: React.FC = () => {
                 </div>
               ) : (
                 <div className="space-y-8">
-                  <div className={`relative overflow-hidden group border-4 border-dashed rounded-[3rem] p-10 transition-all ${selectedImages.length > 0 ? 'border-indigo-100 bg-white shadow-2xl' : 'border-slate-200 bg-white hover:border-indigo-400 hover:shadow-xl'}`}>
-                    {processingFiles && (
-                      <div className="absolute top-0 left-0 w-full h-2 bg-slate-100 overflow-hidden">
+                  <div className={`relative overflow-hidden group border-4 border-dashed rounded-[3rem] p-10 transition-all ${selectedImages.length > 0 || processingFiles ? 'border-indigo-100 bg-white shadow-2xl' : 'border-slate-200 bg-white hover:border-indigo-400 hover:shadow-xl'}`}>
+                    
+                    {processingFiles && selectedImages.length > 0 && (
+                      <div className="absolute top-0 left-0 w-full h-1.5 bg-slate-50 overflow-hidden z-20">
                         <div 
                           className="h-full bg-indigo-600 transition-all duration-500 ease-out shadow-[0_0_10px_rgba(79,70,229,0.5)]"
                           style={{ width: `${progress}%` }}
@@ -356,35 +378,79 @@ const App: React.FC = () => {
                       </div>
                     )}
 
-                    {selectedImages.length === 0 ? (
+                    {processingFiles && selectedImages.length === 0 ? (
+                      <div className="text-center py-20 flex flex-col items-center justify-center space-y-8 animate-in zoom-in-95 duration-500">
+                        <div className="relative">
+                          <svg className="w-48 h-48 transform -rotate-90">
+                            <circle
+                              cx="96"
+                              cy="96"
+                              r="88"
+                              stroke="currentColor"
+                              strokeWidth="8"
+                              fill="transparent"
+                              className="text-slate-100"
+                            />
+                            <circle
+                              cx="96"
+                              cy="96"
+                              r="88"
+                              stroke="currentColor"
+                              strokeWidth="8"
+                              fill="transparent"
+                              strokeDasharray={2 * Math.PI * 88}
+                              strokeDashoffset={2 * Math.PI * 88 * (1 - progress / 100)}
+                              className="text-indigo-600 transition-all duration-500 ease-out"
+                            />
+                          </svg>
+                          <div className="absolute inset-0 flex flex-col items-center justify-center p-6">
+                            {currentProcessingThumb ? (
+                              <div className="relative w-full h-full rounded-full overflow-hidden border-4 border-white shadow-lg animate-pulse">
+                                <img src={currentProcessingThumb} className="w-full h-full object-cover" />
+                                <div className="absolute inset-0 bg-indigo-600/10 flex items-center justify-center">
+                                   <Search className="text-white animate-bounce" size={24} />
+                                </div>
+                                <div className="absolute bottom-4 left-0 w-full text-center">
+                                  <span className="bg-indigo-600 text-white px-3 py-1 rounded-full text-[10px] font-black">{progress}%</span>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <span className="text-4xl font-black text-slate-800">{progress}%</span>
+                                <span className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em]">{currentFileIdx}/{totalFiles} TRANG</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-2 max-w-sm">
+                          <div className="flex items-center justify-center gap-2 mb-2">
+                             <div className="w-8 h-8 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center">
+                                <Loader2 size={16} className="animate-spin" />
+                             </div>
+                             <h3 className="text-2xl font-black text-slate-800">{statusMsg}</h3>
+                          </div>
+                          <p className="text-sm font-bold text-slate-400 uppercase tracking-widest leading-relaxed">Đang phân tích trang {currentFileIdx} trên tổng số {totalFiles} trang tài liệu</p>
+                        </div>
+                      </div>
+                    ) : selectedImages.length === 0 ? (
                       <div className="text-center py-16 relative">
                         <input type="file" accept="image/*" multiple onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" />
                         <div className="w-28 h-28 bg-slate-50 text-slate-400 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 transition-all group-hover:scale-110 group-hover:bg-indigo-50 group-hover:text-indigo-600 shadow-sm">
-                          {processingFiles ? <Loader2 size={48} className="animate-spin" /> : <Upload size={48} />}
+                          <Upload size={48} />
                         </div>
-                        
-                        {processingFiles ? (
-                          <div className="space-y-3">
-                            <h3 className="text-2xl font-black text-indigo-600 animate-pulse">Đang nén: {currentFileIdx}/{totalFiles}</h3>
-                            <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Sử dụng Web Worker để tối ưu hóa...</p>
-                          </div>
-                        ) : (
-                          <>
-                            <h3 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">Thêm ảnh bài viết của bạn</h3>
-                            <p className="text-base text-slate-500 mb-10">Chọn các trang bài làm (JPG, PNG, HEIC). <br/>Hệ thống sẽ tự động tối ưu hóa để AI đọc tốt nhất.</p>
-                            <div className="inline-flex items-center gap-3 px-12 py-5 bg-indigo-600 text-white rounded-[1.5rem] font-black shadow-2xl shadow-indigo-200 hover:scale-105 active:scale-95 transition-all">
-                              <Plus size={24} /> CHỌN ẢNH NGAY
-                            </div>
-                          </>
-                        )}
+                        <h3 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">Thêm ảnh bài viết của bạn</h3>
+                        <p className="text-base text-slate-500 mb-10">Chọn các trang bài làm (JPG, PNG, HEIC). <br/>Hệ thống sẽ tự động tối ưu hóa để AI đọc tốt nhất.</p>
+                        <div className="inline-flex items-center gap-3 px-12 py-5 bg-indigo-600 text-white rounded-[1.5rem] font-black shadow-2xl shadow-indigo-200 hover:scale-105 active:scale-95 transition-all">
+                          <Plus size={24} /> CHỌN ẢNH NGAY
+                        </div>
                       </div>
                     ) : (
                       <div className="space-y-10">
                         <div className="flex items-center justify-between border-b border-slate-100 pb-6">
                           <div className="space-y-1">
                             <h3 className="font-black text-2xl text-slate-800 flex items-center gap-3">
-                              <FileText size={24} className="text-indigo-600" />
-                              Tài liệu của bạn ({selectedImages.length})
+                              <Layers size={24} className="text-indigo-600" />
+                              Tài liệu ({selectedImages.length})
                             </h3>
                             {processingFiles && (
                                <div className="flex items-center gap-2">
@@ -410,10 +476,33 @@ const App: React.FC = () => {
                               </div>
                             </div>
                           ))}
+                          
                           {processingFiles && (
-                            <div className="aspect-[3/4] bg-indigo-50/50 rounded-[2rem] border-2 border-indigo-100 border-dashed flex flex-col items-center justify-center gap-3">
-                              <Loader2 size={32} className="text-indigo-600 animate-spin" />
-                              <span className="text-xs font-black text-indigo-600">{progress}%</span>
+                            <div className="aspect-[3/4] bg-indigo-50/30 rounded-[2rem] border-2 border-indigo-100 border-dashed flex flex-col items-center justify-center gap-4 relative overflow-hidden">
+                              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent -translate-x-full animate-[shimmer_1.5s_infinite]"></div>
+                              <div className="relative flex flex-col items-center gap-2 w-full h-full p-2">
+                                {currentProcessingThumb ? (
+                                   <div className="w-full h-full relative overflow-hidden rounded-[1.5rem]">
+                                      <img src={currentProcessingThumb} className="w-full h-full object-cover blur-[2px] opacity-40" />
+                                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                                        <Loader2 size={32} className="text-indigo-600 animate-spin" />
+                                        <div className="bg-white/80 backdrop-blur px-3 py-1 rounded-full text-[9px] font-black text-indigo-600 uppercase tracking-widest border border-indigo-100">
+                                          Nén {progress}%
+                                        </div>
+                                      </div>
+                                   </div>
+                                ) : (
+                                  <>
+                                    <Loader2 size={32} className="text-indigo-400 animate-spin" />
+                                    <div className="text-[10px] font-black text-indigo-500 uppercase tracking-widest text-center px-4">
+                                      Đang nén {currentFileIdx}...
+                                    </div>
+                                    <div className="w-16 h-1 bg-indigo-100 rounded-full overflow-hidden mt-1">
+                                      <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${progress}%` }}></div>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -423,7 +512,7 @@ const App: React.FC = () => {
                           disabled={processingFiles}
                           className="w-full py-6 rounded-[2rem] font-black text-2xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-2xl shadow-indigo-200 transition-all active:scale-[0.98] flex items-center justify-center gap-4 disabled:bg-slate-200 disabled:shadow-none"
                         >
-                          {processingFiles ? <Loader2 className="animate-spin" /> : <Check size={32} />} 
+                          {processingFiles ? <Loader2 className="animate-spin" /> : <Zap size={32} fill="currentColor" />} 
                           BẮT ĐẦU PHÂN TÍCH
                         </button>
                       </div>
@@ -458,6 +547,12 @@ const App: React.FC = () => {
           </button>
         </div>
       )}
+      
+      <style>{`
+        @keyframes shimmer {
+          100% { transform: translateX(100%); }
+        }
+      `}</style>
     </div>
   );
 };

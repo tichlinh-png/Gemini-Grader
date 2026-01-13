@@ -25,27 +25,42 @@ export const gradeWriting = async (images: ImagePart[]): Promise<GradingResult> 
         parts: [
           ...imageParts,
           {
-            text: `Bạn là một chuyên gia khảo thí tiếng Anh IELTS Senior. 
-Nhiệm vụ: Chấm điểm bài viết tay từ ${images.length} ảnh được cung cấp.
+            text: `Bạn là một giáo viên tiếng Anh tại trung tâm Anh ngữ, có phong cách nhận xét chuyên môn cực kỳ chi tiết, trực diện và dễ hiểu.
 
-YÊU CẦU QUAN TRỌNG NHẤT:
-1. RÀ SOÁT LỖI TỪNG CHỮ (WORD-BY-WORD): Tìm và liệt kê các lỗi sai về Ngữ pháp, Chính tả, Từ vựng và Văn phong.
-2. BỎ QUA DẤU CÂU (PUNCTUATION): Tuyệt đối KHÔNG liệt kê bất kỳ lỗi nào liên quan đến dấu câu (dấu phẩy, dấu chấm, dấu chấm hỏi, dấu ngoặc kép...). Hãy coi như các dấu câu đều đã đúng hoặc không quan trọng.
-3. BỎ QUA LỖI VIẾT HOA (CAPITALIZATION): Tuyệt đối KHÔNG liệt kê bất kỳ lỗi nào liên quan đến việc viết hoa hay viết thường (ví dụ: không viết hoa đầu câu, tên riêng, v.v.). Hãy coi như việc sử dụng chữ hoa/thường đã hoàn toàn chính xác.
-4. KHÔNG TÓM TẮT: Liệt kê đầy đủ mọi lỗi tìm thấy (trừ lỗi dấu câu và lỗi viết hoa). Không bao giờ ghi "Và các lỗi khác...".
-5. PHÂN LOẠI LỖI: Chỉ sử dụng các loại: Grammar, Spelling, Vocabulary, Style. (KHÔNG dùng Punctuation hay Capitalization).
-6. CHẤM ĐIỂM: Khắt khe trên thang điểm 10.0 dựa trên các tiêu chí IELTS, đồng thời khoan dung hơn cho phần dấu câu và viết hoa.
-7. NGÔN NGỮ PHẢN HỒI: Toàn bộ phần giải thích và nhận xét phải bằng TIẾNG VIỆT.
+NHIỆM VỤ: Phân tích bài làm từ ${images.length} ảnh và viết báo cáo cho phụ huynh.
+
+YÊU CẦU VỀ GIỌNG VĂN (MÔ PHỎNG CHÍNH XÁC):
+Phải viết đoạn 'parentReport' theo đúng cấu trúc và văn phong sau:
+1. Sử dụng từ "Con" để gọi học sinh.
+2. Cấu trúc nội dung: [Điểm kiến thức con đã làm tốt] -> [Lỗi sai cụ thể con thường gặp] -> [Ví dụ thực tế từ bài làm kèm sửa lỗi] -> [Giải thích quy tắc bằng tiếng Việt đơn giản].
+3. Ví dụ mẫu bạn cần bắt chước: "Con đã nắm chắc cách dùng 'Do' và 'Does' đi kèm với các chủ ngữ như 'I, you, we, they, he, she, it'. Tuy nhiên, con thường xuyên quên thêm 's' hoặc 'es' vào sau tên các đồ vật hoặc con vật khi đặt câu hỏi chung (ví dụ: thay vì hỏi 'Con có thích lê không?' - Do you like pears - thì con lại chỉ viết là 'pear'). Con lưu ý khi hỏi về sở thích đối với một loại đồ vật nào đó nói chung, phải dùng dạng số nhiều của từ đó."
+
+CÁC QUY TẮC NGHIÊM NGẶT:
+- TUYỆT ĐỐI KHÔNG chào hỏi (Không: "Chào phụ huynh", "Kính gửi...").
+- TUYỆT ĐỐI KHÔNG hứa hẹn (Không: "Sắp tới cô sẽ...", "Trung tâm sẽ...").
+- TUYỆT ĐỐI KHÔNG chúc tụng (Không: "Chúc con học tốt", "Hẹn gặp lại").
+- TUYỆT ĐỐI KHÔNG nhận xét thái độ/nét chữ (Không: "Nét chữ cẩn thận", "Thái độ nghiêm túc").
+- TẬP TRUNG vào lỗi sai ngữ pháp/từ vựng thực tế và cách sửa lỗi.
+
+YÊU CẦU KỸ THUẬT:
+1. Rà soát từng chữ. Bỏ qua lỗi viết hoa/dấu câu.
+2. Thống kê tổng số câu (totalSentences) và số câu đúng hoàn toàn (correctSentences).
+3. Điểm (score) = (correctSentences / totalSentences) * 10.
+4. Ngôn ngữ: Tiếng Việt.
 
 Định dạng JSON yêu cầu:
-- isReadable: boolean (AI có đọc được không?)
-- unreadableReason: string (Nếu không đọc được)
-- recognizedText: string (Nội dung OCR toàn bộ bài viết)
-- score: number
-- errorCount: number
-- errors: Array<{ wrong: string, correct: string, type: string, explanation: string }>
-- sentenceAnalysis: Array<{ original: string, corrected: string, isCorrect: boolean, feedback: string }>. Phân tích câu dựa trên việc đã bỏ qua lỗi dấu câu và lỗi viết hoa.
-- assessment: { strength: string, weakness: string, improvement: string }
+{
+  "isReadable": boolean,
+  "unreadableReason": string,
+  "recognizedText": string,
+  "score": number,
+  "errorCount": number,
+  "correctSentences": number,
+  "totalSentences": number,
+  "errors": Array<{ "wrong": string, "correct": string, "type": string, "explanation": string }>,
+  "sentenceAnalysis": Array<{ "original": string, "corrected": string, "isCorrect": boolean, "feedback": string }>,
+  "assessment": { "strength": string, "weakness": string, "improvement": string, "parentReport": string }
+}
 
 Trả về DUY NHẤT mã JSON.`,
           },
@@ -62,6 +77,8 @@ Trả về DUY NHẤT mã JSON.`,
           recognizedText: { type: Type.STRING },
           score: { type: Type.NUMBER },
           errorCount: { type: Type.INTEGER },
+          correctSentences: { type: Type.INTEGER },
+          totalSentences: { type: Type.INTEGER },
           sentenceAnalysis: {
             type: Type.ARRAY,
             items: {
@@ -94,11 +111,12 @@ Trả về DUY NHẤT mã JSON.`,
               strength: { type: Type.STRING },
               weakness: { type: Type.STRING },
               improvement: { type: Type.STRING },
+              parentReport: { type: Type.STRING },
             },
-            required: ["strength", "weakness", "improvement"],
+            required: ["strength", "weakness", "improvement", "parentReport"],
           },
         },
-        required: ["isReadable", "recognizedText", "score", "errors", "sentenceAnalysis", "assessment"],
+        required: ["isReadable", "recognizedText", "score", "errors", "sentenceAnalysis", "assessment", "correctSentences", "totalSentences"],
       },
     },
   });

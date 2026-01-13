@@ -17,6 +17,7 @@ export interface Assessment {
   strength: string;
   weakness: string;
   improvement: string;
+  parentReport: string; // New field for parent evaluation
 }
 
 export interface GradingResult {
@@ -24,6 +25,8 @@ export interface GradingResult {
   unreadableReason?: string;
   recognizedText: string;
   errorCount: number;
+  correctSentences: number; // New field
+  totalSentences: number; // New field
   errors: ErrorDetail[];
   sentenceAnalysis: SentenceAnalysis[];
   score: number;
