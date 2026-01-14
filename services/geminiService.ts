@@ -11,42 +11,52 @@ interface ImagePart {
 }
 
 export const gradeWriting = async (images: ImagePart[]): Promise<GradingResult> => {
-  const imageParts = images.map(img => ({
-    inlineData: {
-      data: img.base64,
-      mimeType: img.mime,
-    }
-  }));
+  // Gửi ảnh kèm nhãn văn bản để AI phân biệt rõ thứ tự các trang
+  const contentsParts: any[] = [];
+  images.forEach((img, index) => {
+    contentsParts.push({ text: `Nội dung trang ${index + 1}:` });
+    contentsParts.push({
+      inlineData: {
+        data: img.base64,
+        mimeType: img.mime,
+      }
+    });
+  });
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: 'gemini-3-pro-preview',
     contents: [
       {
         parts: [
-          ...imageParts,
+          ...contentsParts,
           {
-            text: `Bạn là một giáo viên tiếng Anh tại trung tâm Anh ngữ, có phong cách nhận xét chuyên môn cực kỳ chi tiết, trực diện và dễ hiểu.
+            text: `Bạn là một chuyên gia ngôn ngữ học và giáo viên tiếng Anh Senior với khả năng đọc chữ viết tay (OCR) cực kỳ xuất sắc. Nhiệm vụ của bạn là rà soát bài làm từ ${images.length} trang ảnh.
 
-NHIỆM VỤ: Phân tích bài làm từ ${images.length} ảnh và viết báo cáo cho phụ huynh.
+YÊU CẦU NHẬN DIỆN CHỮ VIẾT TAY (QUAN TRỌNG):
+1. ĐỘ CHÍNH XÁC CAO: Phải đọc cực kỳ cẩn thận các kiểu chữ viết tay khác nhau: chữ nghiêng, chữ nối (cursive), chữ trẻ em chưa tròn trịa, hoặc chữ bị mờ. 
+2. DỰA VÀO NGỮ CẢNH: Khi gặp một từ khó đọc hoặc ký tự mơ hồ (ví dụ: '5' và 'S', 'u' và 'v', 'n' và 'r'), hãy sử dụng ngữ cảnh của toàn câu và kiến thức ngữ pháp tiếng Anh để suy luận chính xác từ mà học sinh muốn viết.
+3. TRUNG THỰC: 'recognizedText' phải phản ánh chính xác nhất những gì học sinh đã viết trên giấy, bao gồm cả các lỗi chính tả ban đầu.
 
-YÊU CẦU VỀ GIỌNG VĂN (MÔ PHỎNG CHÍNH XÁC):
-Phải viết đoạn 'parentReport' theo đúng cấu trúc và văn phong sau:
-1. Sử dụng từ "Con" để gọi học sinh.
-2. Cấu trúc nội dung: [Điểm kiến thức con đã làm tốt] -> [Lỗi sai cụ thể con thường gặp] -> [Ví dụ thực tế từ bài làm kèm sửa lỗi] -> [Giải thích quy tắc bằng tiếng Việt đơn giản].
-3. Ví dụ mẫu bạn cần bắt chước: "Con đã nắm chắc cách dùng 'Do' và 'Does' đi kèm với các chủ ngữ như 'I, you, we, they, he, she, it'. Tuy nhiên, con thường xuyên quên thêm 's' hoặc 'es' vào sau tên các đồ vật hoặc con vật khi đặt câu hỏi chung (ví dụ: thay vì hỏi 'Con có thích lê không?' - Do you like pears - thì con lại chỉ viết là 'pear'). Con lưu ý khi hỏi về sở thích đối với một loại đồ vật nào đó nói chung, phải dùng dạng số nhiều của từ đó."
+ƯU TIÊN PHÂN TÍCH CHUYÊN SÂU:
+1. CẤU TRÚC PHỨC TẠP: Tập trung kiểm tra tính chính xác của các thì (tenses), câu điều kiện, câu bị động, mệnh đề quan hệ, và sự hòa hợp giữa chủ ngữ - động từ trong các câu phức.
+2. LỖI XÂY DỰNG CÂU: Phát hiện các lỗi về cấu trúc câu như câu chạy (run-on sentences), câu thiếu thành phần (fragments), lỗi lặp từ vô nghĩa, hoặc cách diễn đạt vụng về, không tự nhiên.
+3. BỎ QUA LỖI CƠ BẢN: Tuyệt đối KHÔNG tính lỗi nếu chỉ sai về viết hoa (capitalization) hoặc dấu câu (punctuation), trừ khi việc thiếu dấu câu làm thay đổi hoàn toàn ý nghĩa của câu.
 
-CÁC QUY TẮC NGHIÊM NGẶT:
-- TUYỆT ĐỐI KHÔNG chào hỏi (Không: "Chào phụ huynh", "Kính gửi...").
-- TUYỆT ĐỐI KHÔNG hứa hẹn (Không: "Sắp tới cô sẽ...", "Trung tâm sẽ...").
-- TUYỆT ĐỐI KHÔNG chúc tụng (Không: "Chúc con học tốt", "Hẹn gặp lại").
-- TUYỆT ĐỐI KHÔNG nhận xét thái độ/nét chữ (Không: "Nét chữ cẩn thận", "Thái độ nghiêm túc").
-- TẬP TRUNG vào lỗi sai ngữ pháp/từ vựng thực tế và cách sửa lỗi.
+YÊU CẦU VỀ XÁC ĐỊNH TRANG:
+- Ghi nhận chính xác lỗi nằm ở trang nào (trang 1, trang 2...).
+- Ưu tiên số trang theo ghi chú viết tay của giáo viên (ví dụ: "Eric 9" là trang 9). Nếu không thấy ghi chú, dùng số thứ tự ảnh.
+- Mọi lỗi trong 'errors' và 'sentenceAnalysis' BẮT BUỘC phải có trường 'page'.
+
+YÊU CẦU VỀ GIỌNG VĂN NHẬN XÉT (parentReport):
+- Dùng từ "Con" để gọi học sinh.
+- Cấu trúc: [Kiến thức con đã nắm được] -> [Lỗi sai/Hạn chế cụ thể con thường gặp] -> [Ví dụ thực tế lấy từ bài làm kèm sửa lỗi] -> [Giải thích quy tắc bằng tiếng Việt dễ hiểu].
+- LƯU Ý: Phải dùng cụm từ "Con đã nắm được".
+- CẤM: Chào hỏi, hứa hẹn, chúc tụng, nhận xét nét chữ/thái độ. Chỉ tập trung vào chuyên môn.
 
 YÊU CẦU KỸ THUẬT:
-1. Rà soát từng chữ. Bỏ qua lỗi viết hoa/dấu câu.
-2. Thống kê tổng số câu (totalSentences) và số câu đúng hoàn toàn (correctSentences).
-3. Điểm (score) = (correctSentences / totalSentences) * 10.
-4. Ngôn ngữ: Tiếng Việt.
+- Rà soát từng chữ trên toàn bộ các trang.
+- Score = (correctSentences / totalSentences) * 10.
+- Ngôn ngữ phản hồi: Tiếng Việt.
 
 Định dạng JSON yêu cầu:
 {
@@ -57,8 +67,8 @@ YÊU CẦU KỸ THUẬT:
   "errorCount": number,
   "correctSentences": number,
   "totalSentences": number,
-  "errors": Array<{ "wrong": string, "correct": string, "type": string, "explanation": string }>,
-  "sentenceAnalysis": Array<{ "original": string, "corrected": string, "isCorrect": boolean, "feedback": string }>,
+  "errors": Array<{ "wrong": string, "correct": string, "type": string, "explanation": string, "page": number }>,
+  "sentenceAnalysis": Array<{ "original": string, "corrected": string, "isCorrect": boolean, "feedback": string, "page": number }>,
   "assessment": { "strength": string, "weakness": string, "improvement": string, "parentReport": string }
 }
 
@@ -88,8 +98,9 @@ Trả về DUY NHẤT mã JSON.`,
                 corrected: { type: Type.STRING },
                 isCorrect: { type: Type.BOOLEAN },
                 feedback: { type: Type.STRING },
+                page: { type: Type.INTEGER },
               },
-              required: ["original", "corrected", "isCorrect", "feedback"],
+              required: ["original", "corrected", "isCorrect", "feedback", "page"],
             },
           },
           errors: {
@@ -101,8 +112,9 @@ Trả về DUY NHẤT mã JSON.`,
                 correct: { type: Type.STRING },
                 type: { type: Type.STRING },
                 explanation: { type: Type.STRING },
+                page: { type: Type.INTEGER },
               },
-              required: ["wrong", "correct", "type", "explanation"],
+              required: ["wrong", "correct", "type", "explanation", "page"],
             },
           },
           assessment: {

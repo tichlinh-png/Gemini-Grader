@@ -4,6 +4,7 @@ export interface ErrorDetail {
   correct: string;
   type: 'Grammar' | 'Spelling' | 'Punctuation' | 'Vocabulary' | 'Style';
   explanation: string;
+  page?: number; // Vị trí trang (1, 2, 3...)
 }
 
 export interface SentenceAnalysis {
@@ -11,13 +12,14 @@ export interface SentenceAnalysis {
   corrected: string;
   isCorrect: boolean;
   feedback: string;
+  page?: number; // Vị trí trang (1, 2, 3...)
 }
 
 export interface Assessment {
   strength: string;
   weakness: string;
   improvement: string;
-  parentReport: string; // New field for parent evaluation
+  parentReport: string; 
 }
 
 export interface GradingResult {
@@ -25,8 +27,8 @@ export interface GradingResult {
   unreadableReason?: string;
   recognizedText: string;
   errorCount: number;
-  correctSentences: number; // New field
-  totalSentences: number; // New field
+  correctSentences: number;
+  totalSentences: number;
   errors: ErrorDetail[];
   sentenceAnalysis: SentenceAnalysis[];
   score: number;

@@ -1,7 +1,6 @@
 
-import React, { useState, useRef, useEffect } from 'react';
-/* Added Clock to the import list from lucide-react */
-import { AlertCircle, Award, Star, Zap, Target, MessageSquare, X, ArrowRight, Info, Search, Eye, Highlighter, CheckCircle2, UserRound, Clock } from 'lucide-react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { AlertCircle, Award, Star, Zap, Target, MessageSquare, X, ArrowRight, Info, Search, Eye, Highlighter, CheckCircle2, UserRound, Clock, FileType, Filter, ListFilter, Sparkles } from 'lucide-react';
 import { GradingResult, ErrorDetail } from '../types';
 
 interface GraderResultsProps {
@@ -10,9 +9,69 @@ interface GraderResultsProps {
 
 const GraderResults: React.FC<GraderResultsProps> = ({ result }) => {
   const [selectedErrorIdx, setSelectedErrorIdx] = useState<number | null>(null);
+  const [hoveredErrorIdx, setHoveredErrorIdx] = useState<number | null>(null);
   const [showRawText, setShowRawText] = useState(false);
+  const [filterType, setFilterType] = useState<string | 'All'>('All');
+  const [filterPage, setFilterPage] = useState<number | 'All'>('All');
+  
   const textSectionRef = useRef<HTMLDivElement>(null);
   const errorCardsRef = useRef<(HTMLDivElement | null)[]>([]);
+
+  const getTypeStyles = (type: string, isSelected: boolean) => {
+    const active = isSelected || hoveredErrorIdx !== null;
+    switch (type) {
+      case 'Grammar':
+        return isSelected 
+          ? 'bg-blue-600 text-white border-transparent' 
+          : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100';
+      case 'Spelling':
+        return isSelected 
+          ? 'bg-rose-600 text-white border-transparent' 
+          : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100';
+      case 'Vocabulary':
+        return isSelected 
+          ? 'bg-emerald-600 text-white border-transparent' 
+          : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100';
+      case 'Style':
+        return isSelected 
+          ? 'bg-amber-600 text-white border-transparent' 
+          : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100';
+      case 'Punctuation':
+        return isSelected 
+          ? 'bg-slate-600 text-white border-transparent' 
+          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100';
+      default:
+        return isSelected 
+          ? 'bg-indigo-600 text-white border-transparent' 
+          : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100';
+    }
+  };
+
+  const availableTypes = useMemo(() => {
+    const types = new Set(result.errors.map(e => e.type));
+    return Array.from(types);
+  }, [result.errors]);
+
+  const availablePages = useMemo(() => {
+    const pages = new Set(result.errors.map(e => e.page).filter((p): p is number => p !== undefined));
+    return Array.from(pages).sort((a: number, b: number) => a - b);
+  }, [result.errors]);
+
+  const filteredErrors = useMemo(() => {
+    return result.errors.map((err, originalIdx) => ({ ...err, originalIdx }))
+      .filter(err => {
+        const matchesType = filterType === 'All' || err.type === filterType;
+        const matchesPage = filterPage === 'All' || err.page === filterPage;
+        return matchesType && matchesPage;
+      });
+  }, [result.errors, filterType, filterPage]);
+
+  const filteredSentenceAnalysis = useMemo(() => {
+    return result.sentenceAnalysis.filter(s => {
+      if (s.isCorrect) return false;
+      return filterPage === 'All' || s.page === filterPage;
+    });
+  }, [result.sentenceAnalysis, filterPage]);
 
   const getScoreColor = (score: number) => {
     if (score >= 8.5) return 'text-emerald-600 bg-emerald-50 border-emerald-200';
@@ -21,59 +80,115 @@ const GraderResults: React.FC<GraderResultsProps> = ({ result }) => {
     return 'text-rose-600 bg-rose-50 border-rose-200';
   };
 
-  const errorSentences = result.sentenceAnalysis.filter(s => !s.isCorrect);
-
   const handleSelectError = (idx: number) => {
     setSelectedErrorIdx(idx);
-    setShowRawText(false); // Switch to highlighted view if selecting an error
+    setShowRawText(false); 
     textSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
   const handleSelectFromText = (idx: number) => {
+    const isFiltered = filteredErrors.some(e => e.originalIdx === idx);
+    if (!isFiltered) {
+      setFilterType('All');
+      setFilterPage('All');
+    }
     setSelectedErrorIdx(idx);
-    errorCardsRef.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => {
+      errorCardsRef.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
   };
 
   const renderHighlightedText = () => {
     let text = result.recognizedText;
     if (!result.errors || result.errors.length === 0) return text;
 
-    const segments: { content: string; errorIdx: number | null }[] = [];
+    const segments: { content: string; errorIdx: number | null; type?: string; correct?: string }[] = [];
     
-    const sortedErrors = [...result.errors]
-      .map((err, originalIdx) => ({ ...err, originalIdx }))
-      .filter(err => text.toLowerCase().includes(err.wrong.toLowerCase()));
+    // Create a working list of matches to avoid overlapping same-position issues
+    const matches: { start: number; end: number; errorIdx: number; type: string; correct: string }[] = [];
+    
+    result.errors.forEach((err, originalIdx) => {
+      let pos = 0;
+      // Find all occurrences of the "wrong" text
+      while (true) {
+        const index = text.toLowerCase().indexOf(err.wrong.toLowerCase(), pos);
+        if (index === -1) break;
+        
+        matches.push({
+          start: index,
+          end: index + err.wrong.length,
+          errorIdx: originalIdx,
+          type: err.type,
+          correct: err.correct
+        });
+        pos = index + 1;
+      }
+    });
 
-    sortedErrors.sort((a, b) => text.toLowerCase().indexOf(a.wrong.toLowerCase()) - text.toLowerCase().indexOf(b.wrong.toLowerCase()));
+    // Sort matches by start position, then by length (longer first)
+    matches.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
+
+    // Filter out overlapping matches (keep the first/best one)
+    const nonOverlappingMatches: typeof matches = [];
+    let lastEnd = 0;
+    matches.forEach(match => {
+      if (match.start >= lastEnd) {
+        nonOverlappingMatches.push(match);
+        lastEnd = match.end;
+      }
+    });
 
     let currentPos = 0;
-    sortedErrors.forEach((err) => {
-      const index = text.toLowerCase().indexOf(err.wrong.toLowerCase(), currentPos);
-      if (index !== -1) {
-        if (index > currentPos) {
-          segments.push({ content: text.substring(currentPos, index), errorIdx: null });
-        }
-        segments.push({ content: text.substring(index, index + err.wrong.length), errorIdx: err.originalIdx });
-        currentPos = index + err.wrong.length;
+    nonOverlappingMatches.forEach((match) => {
+      if (match.start > currentPos) {
+        segments.push({ content: text.substring(currentPos, match.start), errorIdx: null });
       }
+      segments.push({ 
+        content: text.substring(match.start, match.end), 
+        errorIdx: match.errorIdx,
+        type: match.type,
+        correct: match.correct
+      });
+      currentPos = match.end;
     });
 
     if (currentPos < text.length) {
       segments.push({ content: text.substring(currentPos), errorIdx: null });
     }
 
-    return segments.map((seg, i) => (
-      <span 
-        key={i} 
-        onClick={() => seg.errorIdx !== null && handleSelectFromText(seg.errorIdx)}
-        className={`
-          ${seg.errorIdx !== null ? 'cursor-pointer border-b-2 transition-all ' : ''}
-          ${seg.errorIdx !== null ? (selectedErrorIdx === seg.errorIdx ? 'bg-rose-500 text-white border-transparent px-1 rounded shadow-lg scale-110 inline-block font-bold' : 'border-rose-300 text-rose-700 bg-rose-50 hover:bg-rose-100') : ''}
-        `}
-      >
-        {seg.content}
-      </span>
-    ));
+    return segments.map((seg, i) => {
+      if (seg.errorIdx === null) return <span key={i}>{seg.content}</span>;
+      
+      const isSelected = selectedErrorIdx === seg.errorIdx;
+      const isHovered = hoveredErrorIdx === seg.errorIdx;
+      const isFilteredOut = filterType !== 'All' && seg.type !== filterType;
+      
+      return (
+        <span 
+          key={i} 
+          onMouseEnter={() => setHoveredErrorIdx(seg.errorIdx)}
+          onMouseLeave={() => setHoveredErrorIdx(null)}
+          onClick={() => handleSelectFromText(seg.errorIdx!)}
+          className={`
+            relative cursor-pointer border-b-2 transition-all duration-200 inline-block px-0.5 mx-0.5
+            ${getTypeStyles(seg.type!, isSelected)}
+            ${isFilteredOut ? 'opacity-30' : 'opacity-100'}
+            ${isSelected ? 'rounded-md shadow-lg scale-110 z-20 font-bold px-1.5' : 'rounded-sm'}
+          `}
+        >
+          {seg.content}
+          
+          {/* Tooltip on hover */}
+          {(isHovered || isSelected) && !isFilteredOut && (
+            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-slate-900 text-white text-[10px] font-bold rounded-lg whitespace-nowrap z-30 shadow-xl animate-in fade-in slide-in-from-bottom-2">
+              <span className="opacity-60 mr-1">Sửa thành:</span>
+              <span className="text-emerald-400">{seg.correct}</span>
+              <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-slate-900"></div>
+            </span>
+          )}
+        </span>
+      );
+    });
   };
 
   return (
@@ -139,60 +254,121 @@ const GraderResults: React.FC<GraderResultsProps> = ({ result }) => {
           </div>
 
           {!showRawText && (
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-full border border-slate-100 inline-block">
-              Nhấn vào chữ đỏ để xem chi tiết
+            <div className="flex items-center gap-3">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-full border border-slate-100 inline-flex items-center gap-2">
+                <Sparkles size={12} className="text-amber-500" /> Di chuột qua từ để xem gợi ý
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {['Grammar', 'Spelling', 'Style'].map(t => (
+                  <div key={t} className={`w-2 h-2 rounded-full ${getTypeStyles(t, true).split(' ')[0]}`} title={t}></div>
+                ))}
+              </div>
             </div>
           )}
 
-          <div className={`text-xl leading-[2.2] font-medium selection:bg-indigo-100 border-l-4 ${showRawText ? 'border-slate-200 text-slate-500 italic' : 'border-indigo-500/20 text-slate-800'} pl-8 py-2 transition-all duration-300`}>
+          <div className={`text-xl md:text-2xl leading-[2.5] font-medium selection:bg-indigo-100 border-l-4 ${showRawText ? 'border-slate-200 text-slate-500 italic' : 'border-indigo-500/20 text-slate-800'} pl-8 py-4 transition-all duration-300`}>
             {showRawText ? result.recognizedText : renderHighlightedText()}
           </div>
         </div>
       </div>
 
-      {/* 2. Full Error List */}
-      {result.errors && result.errors.length > 0 && (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between px-4">
-            <h4 className="font-black text-slate-900 flex items-center gap-4 text-2xl">
-              <div className="w-10 h-10 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center">
-                <X size={24} strokeWidth={3} />
-              </div>
-              Báo cáo chi tiết {result.errors.length} lỗi sai
-            </h4>
-            <div className="flex items-center gap-2 bg-slate-100 px-4 py-2 rounded-full border border-slate-200">
-               <div className="w-2 h-2 bg-rose-500 rounded-full animate-pulse"></div>
-               <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Toàn diện</span>
+      {/* Filters Section */}
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 px-4">
+          <h4 className="font-black text-slate-900 flex items-center gap-4 text-2xl">
+            <div className="w-10 h-10 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center">
+              <X size={24} strokeWidth={3} />
             </div>
-          </div>
+            Báo cáo chi tiết {result.errors.length} lỗi sai
+          </h4>
           
-          <div className="grid gap-5">
-            {result.errors.map((error, idx) => (
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm">
+              <Filter size={16} className="text-slate-400" />
+              <select 
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value)}
+                className="bg-transparent text-xs font-black text-slate-600 uppercase tracking-widest focus:outline-none cursor-pointer"
+              >
+                <option value="All">Tất cả loại lỗi</option>
+                {availableTypes.map(type => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </div>
+
+            {availablePages.length > 1 && (
+              <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm">
+                <FileType size={16} className="text-slate-400" />
+                <select 
+                  value={filterPage}
+                  onChange={(e) => setFilterPage(e.target.value === 'All' ? 'All' : Number(e.target.value))}
+                  className="bg-transparent text-xs font-black text-slate-600 uppercase tracking-widest focus:outline-none cursor-pointer"
+                >
+                  <option value="All">Tất cả trang</option>
+                  {availablePages.map(page => (
+                    <option key={page} value={page}>Trang {page}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            
+            {(filterType !== 'All' || filterPage !== 'All') && (
+              <button 
+                onClick={() => { setFilterType('All'); setFilterPage('All'); }}
+                className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 uppercase tracking-widest flex items-center gap-1 px-3"
+              >
+                Xóa lọc
+              </button>
+            )}
+          </div>
+        </div>
+        
+        {/* 2. Full Error List (Filtered) */}
+        <div className="grid gap-5">
+          {filteredErrors.length === 0 ? (
+            <div className="p-20 bg-white rounded-[3rem] border border-slate-200 text-center space-y-4">
+               <div className="w-16 h-16 bg-slate-50 text-slate-300 rounded-full flex items-center justify-center mx-auto">
+                 <ListFilter size={32} />
+               </div>
+               <p className="font-bold text-slate-400">Không tìm thấy lỗi nào phù hợp với bộ lọc hiện tại.</p>
+            </div>
+          ) : (
+            filteredErrors.map((error, idx) => (
               <div 
-                key={idx} 
-                ref={el => errorCardsRef.current[idx] = el}
-                onClick={() => handleSelectError(idx)}
+                key={error.originalIdx} 
+                ref={el => errorCardsRef.current[error.originalIdx] = el}
+                onClick={() => handleSelectError(error.originalIdx)}
+                onMouseEnter={() => setHoveredErrorIdx(error.originalIdx)}
+                onMouseLeave={() => setHoveredErrorIdx(null)}
                 className={`bg-white p-8 rounded-[2.5rem] border transition-all flex flex-col lg:flex-row gap-8 lg:items-center relative group cursor-pointer
-                  ${selectedErrorIdx === idx ? 'border-indigo-500 shadow-2xl scale-[1.02] ring-4 ring-indigo-50' : 'border-rose-100 shadow-sm hover:shadow-md hover:scale-[1.01]'}
+                  ${selectedErrorIdx === error.originalIdx ? 'border-indigo-50 shadow-2xl scale-[1.02] ring-4 ring-indigo-50' : 'border-slate-100 shadow-sm hover:shadow-md hover:scale-[1.01]'}
                 `}
               >
                 <div className={`absolute top-0 left-0 w-2 h-full transition-colors 
-                  ${selectedErrorIdx === idx ? 'bg-indigo-500' : 'bg-rose-200 group-hover:bg-rose-500'}
+                  ${selectedErrorIdx === error.originalIdx ? 'bg-indigo-500' : 'bg-slate-200 group-hover:bg-indigo-500'}
                 `}></div>
                 <div className="flex-grow space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className={`text-[11px] font-black px-3 py-1 rounded-lg uppercase tracking-wider shadow-sm transition-colors
-                      ${selectedErrorIdx === idx ? 'bg-indigo-600 text-white' : 'bg-rose-100 text-rose-600'}
-                    `}>
-                      #{idx + 1} • {error.type}
-                    </span>
-                    {selectedErrorIdx === idx && (
+                    <div className="flex gap-2">
+                      <span className={`text-[11px] font-black px-3 py-1 rounded-lg uppercase tracking-wider shadow-sm transition-colors
+                        ${selectedErrorIdx === error.originalIdx ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}
+                      `}>
+                        #{error.originalIdx + 1} • {error.type}
+                      </span>
+                      {error.page && (
+                        <span className="bg-slate-800 text-white text-[10px] font-black px-2 py-1 rounded-lg flex items-center gap-1">
+                          <FileType size={10} /> Trang {error.page}
+                        </span>
+                      )}
+                    </div>
+                    {(selectedErrorIdx === error.originalIdx || hoveredErrorIdx === error.originalIdx) && (
                       <span className="text-[10px] font-bold text-indigo-500 flex items-center gap-1 animate-pulse">
-                        <Search size={12} /> Đang chọn
+                        <Search size={12} /> Đang tập trung
                       </span>
                     )}
                   </div>
-                  <div className="flex flex-wrap items-center gap-4 text-xl">
+                  <div className="flex flex-wrap items-center gap-4 text-xl md:text-2xl">
                     <span className="text-rose-600 bg-rose-50 px-5 py-2 rounded-2xl border border-rose-100 line-through font-bold">{error.wrong}</span>
                     <ArrowRight size={24} className="text-slate-300" />
                     <span className="text-emerald-600 bg-emerald-50 px-5 py-2 rounded-2xl border border-emerald-100 font-black shadow-sm">{error.correct}</span>
@@ -205,24 +381,29 @@ const GraderResults: React.FC<GraderResultsProps> = ({ result }) => {
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
+            ))
+          )}
         </div>
-      )}
+      </div>
 
-      {/* 3. Context Correction */}
-      {errorSentences.length > 0 && (
+      {/* 3. Context Correction (Filtered by Page if applicable) */}
+      {filteredSentenceAnalysis.length > 0 && (
         <div className="space-y-6">
           <h4 className="font-black text-slate-900 flex items-center gap-4 text-2xl px-4">
             <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center">
               <MessageSquare size={24} />
             </div>
-            Phân tích câu có lỗi
+            Phân tích câu có lỗi {filterPage !== 'All' ? `trên Trang ${filterPage}` : ''}
           </h4>
           <div className="grid gap-6">
-            {errorSentences.map((item, idx) => (
+            {filteredSentenceAnalysis.map((item, idx) => (
               <div key={idx} className="p-8 rounded-[2.8rem] border border-indigo-50 bg-white shadow-sm overflow-hidden relative group">
                 <div className="absolute top-0 left-0 w-2 h-full bg-indigo-400 group-hover:bg-indigo-600 transition-colors"></div>
+                {item.page && (
+                  <div className="absolute top-4 right-8 bg-slate-100 px-3 py-1 rounded-full text-[10px] font-black text-slate-500 uppercase tracking-widest border border-slate-200">
+                    Trang {item.page}
+                  </div>
+                )}
                 <div className="space-y-6">
                   <div className="space-y-2">
                     <p className="text-[11px] font-black text-rose-400 uppercase tracking-widest">Nội dung gốc</p>
