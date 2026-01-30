@@ -5,6 +5,9 @@ export interface ErrorDetail {
   type: 'Grammar' | 'Spelling' | 'Punctuation' | 'Vocabulary' | 'Style';
   explanation: string;
   page?: number; // Vị trí trang (1, 2, 3...)
+  context: string; // Nguyên văn câu chứa lỗi
+  taskName?: string; // Tên bài tập (VD: Exercise 1)
+  taskInstruction?: string; // Yêu cầu đề bài (VD: Chia động từ)
 }
 
 export interface SentenceAnalysis {

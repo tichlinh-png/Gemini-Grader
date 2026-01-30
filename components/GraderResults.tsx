@@ -1,24 +1,42 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { AlertCircle, Award, Star, Zap, Target, MessageSquare, X, ArrowRight, Info, Search, Eye, Highlighter, CheckCircle2, UserRound, Clock, FileType, Filter, ListFilter, Sparkles } from 'lucide-react';
+import { AlertCircle, Award, Star, Zap, Target, MessageSquare, X, ArrowRight, Info, Search, Eye, Highlighter, CheckCircle2, UserRound, Clock, FileType, Filter, ListFilter, Sparkles, Columns, Calculator, Copy, Check, Quote, BookOpen } from 'lucide-react';
 import { GradingResult, ErrorDetail } from '../types';
 
 interface GraderResultsProps {
   result: GradingResult;
 }
 
+type ViewMode = 'highlight' | 'original' | 'side-by-side';
+
 const GraderResults: React.FC<GraderResultsProps> = ({ result }) => {
+  const [viewMode, setViewMode] = useState<ViewMode>('highlight');
   const [selectedErrorIdx, setSelectedErrorIdx] = useState<number | null>(null);
   const [hoveredErrorIdx, setHoveredErrorIdx] = useState<number | null>(null);
-  const [showRawText, setShowRawText] = useState(false);
   const [filterType, setFilterType] = useState<string | 'All'>('All');
   const [filterPage, setFilterPage] = useState<number | 'All'>('All');
+  const [copied, setCopied] = useState(false);
   
   const textSectionRef = useRef<HTMLDivElement>(null);
   const errorCardsRef = useRef<(HTMLDivElement | null)[]>([]);
 
+  // Helper to remove markdown symbols like **, *, etc.
+  const cleanReportText = (text: string) => {
+    if (!text) return "";
+    return text
+      .replace(/\*\*/g, '') // Remove bold markers
+      .replace(/^\s*\*\s/gm, '- ') // Replace bullet point * with -
+      .replace(/__/g, ''); // Remove underline markers
+  };
+
+  const handleCopyReport = () => {
+    const cleanText = cleanReportText(result.assessment.parentReport);
+    navigator.clipboard.writeText(cleanText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const getTypeStyles = (type: string, isSelected: boolean) => {
-    const active = isSelected || hoveredErrorIdx !== null;
     switch (type) {
       case 'Grammar':
         return isSelected 
@@ -58,12 +76,23 @@ const GraderResults: React.FC<GraderResultsProps> = ({ result }) => {
   }, [result.errors]);
 
   const filteredErrors = useMemo(() => {
-    return result.errors.map((err, originalIdx) => ({ ...err, originalIdx }))
-      .filter(err => {
-        const matchesType = filterType === 'All' || err.type === filterType;
-        const matchesPage = filterPage === 'All' || err.page === filterPage;
-        return matchesType && matchesPage;
-      });
+    // 1. Map to add original index
+    const mapped = result.errors.map((err, originalIdx) => ({ ...err, originalIdx }));
+    
+    // 2. Filter
+    const filtered = mapped.filter(err => {
+      const matchesType = filterType === 'All' || err.type === filterType;
+      const matchesPage = filterPage === 'All' || err.page === filterPage;
+      return matchesType && matchesPage;
+    });
+
+    // 3. Sort: Page first, then original Index (assuming AI returns them in relative order)
+    return filtered.sort((a, b) => {
+      const pageA = a.page || 0;
+      const pageB = b.page || 0;
+      if (pageA !== pageB) return pageA - pageB;
+      return a.originalIdx - b.originalIdx;
+    });
   }, [result.errors, filterType, filterPage]);
 
   const filteredSentenceAnalysis = useMemo(() => {
@@ -82,7 +111,7 @@ const GraderResults: React.FC<GraderResultsProps> = ({ result }) => {
 
   const handleSelectError = (idx: number) => {
     setSelectedErrorIdx(idx);
-    setShowRawText(false); 
+    if (viewMode === 'original') setViewMode('highlight');
     textSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
@@ -103,17 +132,13 @@ const GraderResults: React.FC<GraderResultsProps> = ({ result }) => {
     if (!result.errors || result.errors.length === 0) return text;
 
     const segments: { content: string; errorIdx: number | null; type?: string; correct?: string }[] = [];
-    
-    // Create a working list of matches to avoid overlapping same-position issues
     const matches: { start: number; end: number; errorIdx: number; type: string; correct: string }[] = [];
     
     result.errors.forEach((err, originalIdx) => {
       let pos = 0;
-      // Find all occurrences of the "wrong" text
       while (true) {
         const index = text.toLowerCase().indexOf(err.wrong.toLowerCase(), pos);
         if (index === -1) break;
-        
         matches.push({
           start: index,
           end: index + err.wrong.length,
@@ -125,10 +150,8 @@ const GraderResults: React.FC<GraderResultsProps> = ({ result }) => {
       }
     });
 
-    // Sort matches by start position, then by length (longer first)
     matches.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
 
-    // Filter out overlapping matches (keep the first/best one)
     const nonOverlappingMatches: typeof matches = [];
     let lastEnd = 0;
     matches.forEach(match => {
@@ -158,7 +181,6 @@ const GraderResults: React.FC<GraderResultsProps> = ({ result }) => {
 
     return segments.map((seg, i) => {
       if (seg.errorIdx === null) return <span key={i}>{seg.content}</span>;
-      
       const isSelected = selectedErrorIdx === seg.errorIdx;
       const isHovered = hoveredErrorIdx === seg.errorIdx;
       const isFilteredOut = filterType !== 'All' && seg.type !== filterType;
@@ -177,11 +199,9 @@ const GraderResults: React.FC<GraderResultsProps> = ({ result }) => {
           `}
         >
           {seg.content}
-          
-          {/* Tooltip on hover */}
           {(isHovered || isSelected) && !isFilteredOut && (
             <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-slate-900 text-white text-[10px] font-bold rounded-lg whitespace-nowrap z-30 shadow-xl animate-in fade-in slide-in-from-bottom-2">
-              <span className="opacity-60 mr-1">Sửa thành:</span>
+              <span className="opacity-60 mr-1">Sửa:</span>
               <span className="text-emerald-400">{seg.correct}</span>
               <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-slate-900"></div>
             </span>
@@ -194,34 +214,58 @@ const GraderResults: React.FC<GraderResultsProps> = ({ result }) => {
   return (
     <div className="w-full space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-700 pb-20">
       {/* 1. Score Dashboard */}
-      <div className={`p-10 rounded-[3rem] border-2 ${getScoreColor(result.score)} shadow-2xl shadow-slate-200/40 relative overflow-hidden bg-white/50 backdrop-blur-sm`}>
-        <div className="absolute -top-10 -right-10 w-40 h-40 bg-current opacity-5 rounded-full"></div>
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-10 relative z-10">
-          <div className="flex items-center gap-8">
-            <div className="p-6 bg-white rounded-[2rem] shadow-lg text-indigo-600">
-              <Award size={56} />
+      <div className="space-y-6">
+        <div className={`p-10 rounded-[3rem] border-2 ${getScoreColor(result.score)} shadow-2xl shadow-slate-200/40 relative overflow-hidden bg-white/50 backdrop-blur-sm`}>
+          <div className="absolute -top-10 -right-10 w-40 h-40 bg-current opacity-5 rounded-full"></div>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-10 relative z-10">
+            <div className="flex items-center gap-8">
+              <div className="p-6 bg-white rounded-[2rem] shadow-lg text-indigo-600">
+                <Award size={56} />
+              </div>
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-[0.25em] opacity-40 mb-1">Band Score</h3>
+                <p className="text-7xl font-black tracking-tighter">{result.score.toFixed(1)}<span className="text-3xl font-normal opacity-30 ml-1">/10</span></p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm font-black uppercase tracking-[0.25em] opacity-40 mb-1">Band Score</h3>
-              <p className="text-7xl font-black tracking-tighter">{result.score.toFixed(1)}<span className="text-3xl font-normal opacity-30 ml-1">/10</span></p>
+            
+            <div className="grid grid-cols-2 gap-8 flex-grow max-w-xl">
+              <div className="space-y-1">
+                <p className="text-xs font-black uppercase tracking-widest opacity-40">Tỷ lệ câu đúng</p>
+                <p className="text-5xl font-black text-slate-800 flex items-baseline gap-1">
+                  {result.correctSentences}
+                  <span className="text-2xl font-normal opacity-30">/{result.totalSentences}</span>
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-black uppercase tracking-widest opacity-40">Phát hiện lỗi</p>
+                <p className={`text-5xl font-black flex items-center gap-3 ${result.errorCount > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                  {result.errorCount}
+                  {result.errorCount > 0 ? <AlertCircle size={32} /> : <Zap size={32} />}
+                </p>
+              </div>
             </div>
           </div>
-          
-          <div className="grid grid-cols-2 gap-8 flex-grow max-w-xl">
-            <div className="space-y-1">
-              <p className="text-xs font-black uppercase tracking-widest opacity-40">Tỷ lệ câu đúng</p>
-              <p className="text-5xl font-black text-slate-800 flex items-baseline gap-1">
-                {result.correctSentences}
-                <span className="text-2xl font-normal opacity-30">/{result.totalSentences}</span>
-              </p>
+        </div>
+
+        {/* Score Calculation Logic Explanation */}
+        <div className="bg-white/40 border border-slate-200 rounded-[2.5rem] p-8 flex flex-col md:flex-row items-center gap-8 shadow-sm group hover:border-indigo-200 transition-colors">
+          <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shrink-0 shadow-inner group-hover:scale-110 transition-transform">
+            <Calculator size={28} />
+          </div>
+          <div className="space-y-2 flex-grow text-center md:text-left">
+            <h4 className="font-black text-slate-800 text-sm uppercase tracking-[0.2em]">Cách tính điểm số</h4>
+            <p className="text-sm text-slate-500 leading-relaxed font-medium">
+              Điểm số cuối cùng được tính dựa trên tỷ lệ <span className="text-emerald-600 font-bold">số câu văn chính xác hoàn toàn</span> so với <span className="text-slate-700 font-bold">tổng số câu</span> được nhận diện trong bài viết.
+            </p>
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 mt-2">
+              <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-slate-200">
+                Công thức: (Câu đúng / Tổng câu) × 10
+              </span>
             </div>
-            <div className="space-y-1">
-              <p className="text-xs font-black uppercase tracking-widest opacity-40">Phát hiện lỗi</p>
-              <p className={`text-5xl font-black flex items-center gap-3 ${result.errorCount > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                {result.errorCount}
-                {result.errorCount > 0 ? <AlertCircle size={32} /> : <Zap size={32} />}
-              </p>
-            </div>
+          </div>
+          <div className="bg-indigo-600 text-white px-8 py-4 rounded-[1.8rem] font-mono text-xl font-bold shadow-xl shadow-indigo-100/50 flex flex-col items-center">
+            <div className="text-[10px] opacity-60 uppercase mb-1 tracking-widest">KẾT QUẢ</div>
+            {result.correctSentences}/{result.totalSentences} × 10 = {result.score.toFixed(1)}
           </div>
         </div>
       </div>
@@ -237,37 +281,57 @@ const GraderResults: React.FC<GraderResultsProps> = ({ result }) => {
               <h4 className="font-black uppercase text-xs tracking-[0.3em]">Văn bản & Vị trí lỗi</h4>
             </div>
             
-            <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200 shadow-inner">
+            <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200 shadow-inner overflow-hidden">
               <button 
-                onClick={() => setShowRawText(false)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${!showRawText ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                onClick={() => setViewMode('highlight')}
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === 'highlight' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
               >
                 <Highlighter size={14} /> Sửa lỗi
               </button>
               <button 
-                onClick={() => setShowRawText(true)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${showRawText ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                onClick={() => setViewMode('side-by-side')}
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === 'side-by-side' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                <Columns size={14} /> So sánh
+              </button>
+              <button 
+                onClick={() => setViewMode('original')}
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === 'original' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
               >
                 <Eye size={14} /> Bản gốc
               </button>
             </div>
           </div>
 
-          {!showRawText && (
+          {viewMode !== 'original' && (
             <div className="flex items-center gap-3">
               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-full border border-slate-100 inline-flex items-center gap-2">
                 <Sparkles size={12} className="text-amber-500" /> Di chuột qua từ để xem gợi ý
               </div>
-              <div className="flex flex-wrap gap-2">
-                {['Grammar', 'Spelling', 'Style'].map(t => (
-                  <div key={t} className={`w-2 h-2 rounded-full ${getTypeStyles(t, true).split(' ')[0]}`} title={t}></div>
-                ))}
-              </div>
             </div>
           )}
 
-          <div className={`text-xl md:text-2xl leading-[2.5] font-medium selection:bg-indigo-100 border-l-4 ${showRawText ? 'border-slate-200 text-slate-500 italic' : 'border-indigo-500/20 text-slate-800'} pl-8 py-4 transition-all duration-300`}>
-            {showRawText ? result.recognizedText : renderHighlightedText()}
+          <div className="transition-all duration-500">
+            {viewMode === 'side-by-side' ? (
+              <div className="grid md:grid-cols-2 gap-8">
+                <div className="space-y-4">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 bg-slate-100 px-3 py-1 rounded-full">Bản nhận diện gốc</span>
+                  <div className="text-lg md:text-xl leading-[2.2] font-medium text-slate-500 italic border-l-4 border-slate-200 pl-6 py-2">
+                    {result.recognizedText}
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-50 px-3 py-1 rounded-full">Bản đã rà soát lỗi</span>
+                  <div className="text-lg md:text-xl leading-[2.2] font-medium text-slate-800 border-l-4 border-indigo-500/20 pl-6 py-2">
+                    {renderHighlightedText()}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className={`text-xl md:text-2xl leading-[2.5] font-medium selection:bg-indigo-100 border-l-4 ${viewMode === 'original' ? 'border-slate-200 text-slate-500 italic' : 'border-indigo-500/20 text-slate-800'} pl-8 py-4 transition-all duration-300`}>
+                {viewMode === 'original' ? result.recognizedText : renderHighlightedText()}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -334,7 +398,7 @@ const GraderResults: React.FC<GraderResultsProps> = ({ result }) => {
                <p className="font-bold text-slate-400">Không tìm thấy lỗi nào phù hợp với bộ lọc hiện tại.</p>
             </div>
           ) : (
-            filteredErrors.map((error, idx) => (
+            filteredErrors.map((error) => (
               <div 
                 key={error.originalIdx} 
                 ref={el => errorCardsRef.current[error.originalIdx] = el}
@@ -368,6 +432,34 @@ const GraderResults: React.FC<GraderResultsProps> = ({ result }) => {
                       </span>
                     )}
                   </div>
+
+                  {/* Context Section (New) */}
+                  {error.context && (
+                    <div className="bg-slate-50 border-l-4 border-slate-300 pl-4 py-2 italic text-slate-600 mb-2 relative">
+                      <Quote className="absolute -top-2 -left-2 text-slate-200 fill-slate-200" size={24} />
+                       "{error.context}"
+                    </div>
+                  )}
+
+                  {/* Task Info Section (NEW ADDITION) */}
+                  {(error.taskName || error.taskInstruction) && (
+                    <div className="flex items-start gap-3 bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                      <BookOpen size={16} className="text-indigo-400 mt-0.5 shrink-0" />
+                      <div className="text-sm">
+                        {error.taskName && (
+                          <span className="font-bold text-indigo-900 uppercase tracking-wide text-xs mr-2 block sm:inline">
+                            {error.taskName}
+                          </span>
+                        )}
+                        {error.taskInstruction && (
+                          <span className="text-indigo-800 italic">
+                            {error.taskInstruction}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap items-center gap-4 text-xl md:text-2xl">
                     <span className="text-rose-600 bg-rose-50 px-5 py-2 rounded-2xl border border-rose-100 line-through font-bold">{error.wrong}</span>
                     <ArrowRight size={24} className="text-slate-300" />
@@ -386,7 +478,7 @@ const GraderResults: React.FC<GraderResultsProps> = ({ result }) => {
         </div>
       </div>
 
-      {/* 3. Context Correction (Filtered by Page if applicable) */}
+      {/* 3. Context Correction */}
       {filteredSentenceAnalysis.length > 0 && (
         <div className="space-y-6">
           <h4 className="font-black text-slate-900 flex items-center gap-4 text-2xl px-4">
@@ -468,8 +560,17 @@ const GraderResults: React.FC<GraderResultsProps> = ({ result }) => {
                   <p className="text-indigo-600 font-bold text-sm tracking-wide uppercase mt-1">Học viện Anh ngữ Gemini Grader</p>
                 </div>
               </div>
-              <div className="bg-slate-50 px-6 py-3 rounded-2xl border border-slate-100 text-slate-500 font-bold text-xs uppercase tracking-widest flex items-center gap-3">
-                 <Clock size={16} /> {new Date().toLocaleDateString('vi-VN')}
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={handleCopyReport}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest transition-all bg-indigo-50 text-indigo-600 hover:bg-indigo-100 active:scale-95"
+                >
+                  {copied ? <Check size={16} /> : <Copy size={16} />}
+                  {copied ? "Đã sao chép" : "Sao chép"}
+                </button>
+                <div className="bg-slate-50 px-6 py-3 rounded-2xl border border-slate-100 text-slate-500 font-bold text-xs uppercase tracking-widest flex items-center gap-3">
+                   <Clock size={16} /> {new Date().toLocaleDateString('vi-VN')}
+                </div>
               </div>
             </div>
 
@@ -479,7 +580,7 @@ const GraderResults: React.FC<GraderResultsProps> = ({ result }) => {
               </div>
               <div className="prose prose-indigo max-w-none">
                 <p className="text-xl leading-[1.8] text-slate-700 font-medium italic whitespace-pre-line">
-                  {result.assessment.parentReport}
+                  {cleanReportText(result.assessment.parentReport)}
                 </p>
               </div>
             </div>
